@@ -1,9 +1,10 @@
 import { GraphQLSchema } from 'graphql'
+import { applySchemaCustomDirectives } from 'graphql-custom-directive';
 import { JSONSchema7 } from 'json-schema'
 
 import { DEFAULT_ENTRY_POINTS } from './helpers'
 import { schemaReducer } from './schemaReducer'
-import { ConvertParams, GraphQLTypeMap } from './types'
+import { ConvertParams, GraphQLTypeMap, SchemaData } from './types'
 
 /**
  * @param jsonSchema - An individual schema or an array of schemas, provided
@@ -26,16 +27,21 @@ import { ConvertParams, GraphQLTypeMap } from './types'
  * a Map of types and returns Query, Mutation (optional), and Subscription (optional)
  * blocks. Each block consists of a hash of `GraphQLFieldConfig`s.
  */
-export default function convert({ jsonSchema, entryPoints = DEFAULT_ENTRY_POINTS }: ConvertParams): GraphQLSchema {
+export default function convert({ jsonSchema, entryPoints = DEFAULT_ENTRY_POINTS, getTypeProperties }: ConvertParams): GraphQLSchema {
   // coerce input to array of schema objects
-  const schemaArray: JSONSchema7[] = toArray(jsonSchema).map(toSchema)
+  const schemaArray: SchemaData[] = toArray(jsonSchema).map(schemaItem => ({
+    schema: toSchema(schemaItem),
+    getTypeProperties
+  }))
 
   const types: GraphQLTypeMap = schemaArray.reduce(schemaReducer, {})
 
-  return new GraphQLSchema({
+  const schema = new GraphQLSchema({
     ...types,
     ...entryPoints(types),
   })
+
+  return applySchemaCustomDirectives(schema);
 }
 
 function toArray(x: JSONSchema7 | JSONSchema7[] | string | string[]): any[] {

@@ -17,7 +17,7 @@ import uppercamelcase from 'uppercamelcase'
 
 import { graphqlSafeEnumKey } from './graphqlSafeEnumKey'
 import { err } from './helpers'
-import { GraphQLTypeMap } from './types'
+import { GraphQLTypeMap, SchemaData, GetTypeProperties } from './types'
 
 /** Maps basic JSON schema types to basic GraphQL types */
 const BASIC_TYPE_MAPPING = {
@@ -26,18 +26,18 @@ const BASIC_TYPE_MAPPING = {
   number: GraphQLFloat,
   boolean: GraphQLBoolean,
 }
-export function schemaReducer(knownTypes: GraphQLTypeMap, schema: JSONSchema7) {
+export function schemaReducer(knownTypes: GraphQLTypeMap, { schema, getTypeProperties }: SchemaData) {
   // validate against the json schema schema
   new Ajv().validateSchema(schema)
 
   const typeName = schema.$id
   if (typeof typeName === 'undefined') throw err('Schema does not have an `$id` property.')
 
-  knownTypes[typeName] = buildType(typeName, schema, knownTypes)
+  knownTypes[typeName] = buildType(typeName, schema, knownTypes, getTypeProperties)
   return knownTypes
 }
 
-function buildType(propName: string, schema: JSONSchema7, knownTypes: GraphQLTypeMap): GraphQLType {
+function buildType(propName: string, schema: JSONSchema7, knownTypes: GraphQLTypeMap, getTypeProperties?: GetTypeProperties): GraphQLType {
   const name = uppercamelcase(propName)
 
   // oneOf?
@@ -48,7 +48,7 @@ function buildType(propName: string, schema: JSONSchema7, knownTypes: GraphQLTyp
       const caseSchema = cases[caseName]
       const qualifiedName = `${name}.oneOf[${caseName}]`
       const typeSchema = (caseSchema.then || caseSchema) as JSONSchema7
-      return buildType(qualifiedName, typeSchema, knownTypes) as GraphQLObjectType
+      return buildType(qualifiedName, typeSchema, knownTypes, getTypeProperties) as GraphQLObjectType
     })
     const description = buildDescription(schema)
     return new GraphQLUnionType({ name, description, types })
@@ -60,22 +60,27 @@ function buildType(propName: string, schema: JSONSchema7, knownTypes: GraphQLTyp
     const fields = () =>
       !_.isEmpty(schema.properties)
         ? _.mapValues(schema.properties, (prop: JSONSchema7, fieldName: string) => {
-            const qualifiedFieldName = `${name}.${fieldName}`
-            const type = buildType(qualifiedFieldName, prop, knownTypes) as GraphQLObjectType
-            const isRequired = _.includes(schema.required, fieldName)
-            return {
-              type: isRequired ? new GraphQLNonNull(type) : type,
-              description: buildDescription(prop),
-            }
-          })
+          const qualifiedFieldName = `${name}.${fieldName}`
+          const type = buildType(qualifiedFieldName, prop, knownTypes, getTypeProperties) as GraphQLObjectType
+          const isRequired = _.includes(schema.required, fieldName)
+          return {
+            type: isRequired ? new GraphQLNonNull(type) : type,
+            description: buildDescription(prop),
+          }
+        })
         : // GraphQL doesn't allow types with no fields, so put a placeholder
-          { _empty: { type: GraphQLString } }
-    return new GraphQLObjectType({ name, description, fields })
+        { _empty: { type: GraphQLString } }
+    return new GraphQLObjectType({
+      name,
+      description,
+      fields,
+      ...(getTypeProperties ? getTypeProperties(name, GraphQLObjectType) : {})
+    })
   }
 
   // array?
   else if (schema.type === 'array') {
-    const elementType = buildType(name, schema.items as JSONSchema7, knownTypes)
+    const elementType = buildType(name, schema.items as JSONSchema7, knownTypes, getTypeProperties)
     return new GraphQLList(new GraphQLNonNull(elementType))
   }
 
@@ -85,8 +90,12 @@ function buildType(propName: string, schema: JSONSchema7, knownTypes: GraphQLTyp
     const description = buildDescription(schema)
     const graphqlToJsonMap = _.keyBy(schema.enum, graphqlSafeEnumKey)
     const values = _.mapValues(graphqlToJsonMap, (value: string) => ({ value }))
-    const enumType = new GraphQLEnumType({ name, description, values })
-    return enumType
+    return new GraphQLEnumType({
+      name,
+      description,
+      values,
+      ...(getTypeProperties ? getTypeProperties(name, GraphQLEnumType) : {})
+    })
   }
 
   // $ref?

@@ -14,9 +14,17 @@ declare namespace jsonschema2graphql {
     subscription?: GraphQLObjectType
   }
 
+  export type GetTypeProperties = (name: string, objectType: any) => Object;
+
+  export interface SchemaData {
+    schema: JSONSchema7
+    getTypeProperties?: GetTypeProperties
+  }
+
   export interface ConvertParams {
     jsonSchema: JSONSchema7 | JSONSchema7[] | string | string[]
     entryPoints?: EntryPointBuilder
+    getTypeProperties?: GetTypeProperties
   }
 }
 

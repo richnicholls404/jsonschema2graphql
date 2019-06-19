@@ -38,6 +38,7 @@
     "ajv": "^6.5.4",
     "camelcase": "^5.0.0",
     "graphql": "14.0.2",
+    "graphql-custom-directive": "^0.2.0",
     "lodash": "^4.17.11",
     "pluralize": "^7.0.0",
     "ramda": "^0.25.0",
